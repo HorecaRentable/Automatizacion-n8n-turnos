@@ -1,0 +1,179 @@
+{
+  "id": "turnosErrores1",
+  "name": "Turnos · 99 Aviso de errores",
+  "active": false,
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "error-trigger",
+      "name": "Error Trigger",
+      "type": "n8n-nodes-base.errorTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "a1",
+              "name": "supabase_url",
+              "value": "https://TU-PROYECTO.supabase.co",
+              "type": "string"
+            },
+            {
+              "id": "a2",
+              "name": "from_email",
+              "value": "turnos@tu-dominio.com",
+              "type": "string"
+            },
+            {
+              "id": "a3",
+              "name": "admin_email_respaldo",
+              "value": "alexandra@rocketnova.io",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "configuraci-n",
+      "name": "Configuración",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        220,
+        300
+      ],
+      "notes": "Único sitio (por workflow) con la URL de Supabase y el remitente. La clave service_role NO va aquí: está en la credencial \"Supabase turnos (service role)\".",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Configuración').first().json.supabase_url }}/rest/v1/rpc/get_config",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "{}",
+        "options": {}
+      },
+      "id": "cargar-par-metros",
+      "name": "Cargar parámetros",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        440,
+        300
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "supabaseTurnos1",
+          "name": "Supabase turnos (service role)"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Aviso al administrador cuando falla cualquier workflow de turnos.\n// No incluye datos personales de clientes: solo qué falló y dónde mirar.\nconst e = $('Error Trigger').first().json;\nconst conf = $('Configuración').first().json;\nlet admin = null;\ntry { admin = $('Cargar parámetros').first().json.admin_email; } catch (err) { /* Supabase caído */ }\nadmin = admin || conf.admin_email_respaldo;\n\nconst ex = e.execution ?? {};\nconst wf = e.workflow ?? {};\nconst msg = ex.error?.message ?? 'sin mensaje';\nconst lines = [\n  `El workflow \"${wf.name}\" ha fallado.`, '',\n  `Nodo: ${ex.lastNodeExecuted ?? '(desconocido)'}`,\n  `Error: ${msg}`,\n  `Ejecución: ${ex.id ?? '?'}${ex.url ? '  ' + ex.url : ''}`, '',\n  'Qué hacer: abre la ejecución en n8n (pestaña Executions) para ver el detalle.',\n  'Las reservas ya confirmadas en la base de datos NO se pierden por este error.',\n];\nconst html = '<div style=\"font-family:Arial,sans-serif\"><h3>⚠️ Fallo en el sistema de turnos</h3>'\n  + lines.map((l) => `<div>${String(l).replace(/&/g, '&amp;').replace(/</g, '&lt;') || '&nbsp;'}</div>`).join('') + '</div>';\n\nreturn [{ json: {\n  from: conf.from_email, to: admin,\n  subject: `[Turnos] Error en \"${wf.name}\"`,\n  text: lines.join('\\n'), html,\n} }];\n"
+      },
+      "id": "preparar-aviso",
+      "name": "Preparar aviso",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        660,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "fromEmail": "={{ $json.from }}",
+        "toEmail": "={{ $json.to }}",
+        "subject": "={{ $json.subject }}",
+        "emailFormat": "both",
+        "text": "={{ $json.text }}",
+        "html": "={{ $json.html }}",
+        "options": {
+          "appendAttribution": false
+        }
+      },
+      "id": "avisar-al-administrador",
+      "name": "Avisar al administrador",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        880,
+        300
+      ],
+      "credentials": {
+        "smtp": {
+          "id": "smtpTurnos1",
+          "name": "SMTP turnos"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Error Trigger": {
+      "main": [
+        [
+          {
+            "node": "Configuración",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Configuración": {
+      "main": [
+        [
+          {
+            "node": "Cargar parámetros",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Cargar parámetros": {
+      "main": [
+        [
+          {
+            "node": "Preparar aviso",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Preparar aviso": {
+      "main": [
+        [
+          {
+            "node": "Avisar al administrador",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "Europe/Madrid",
+    "saveDataSuccessExecution": "all",
+    "saveDataErrorExecution": "all",
+    "saveManualExecutions": false
+  },
+  "pinData": {},
+  "meta": {
+    "templateCredsSetupCompleted": false
+  }
+}

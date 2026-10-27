@@ -1,0 +1,609 @@
+{
+  "id": "turnosCrearEnlace1",
+  "name": "Turnos · 07 Crear enlace corto",
+  "active": false,
+  "nodes": [
+    {
+      "parameters": {
+        "authentication": "basicAuth",
+        "formTitle": "Crear enlace corto",
+        "formDescription": "Crea un enlace corto para una campaña o canal (por ejemplo, instagram). Las reservas hechas desde él se cuentan en las estadísticas. El slug solo admite minúsculas, números y guiones.",
+        "formFields": {
+          "values": [
+            {
+              "fieldLabel": "Slug",
+              "fieldName": "slug",
+              "fieldType": "text",
+              "requiredField": true,
+              "placeholder": "instagram"
+            },
+            {
+              "fieldLabel": "Destino (opcional)",
+              "fieldName": "destino",
+              "fieldType": "text",
+              "placeholder": "Vacío = el formulario de reserva"
+            },
+            {
+              "fieldLabel": "Canal (opcional)",
+              "fieldName": "canal",
+              "fieldType": "text",
+              "placeholder": "Vacío = el slug. Ej.: instagram"
+            }
+          ]
+        },
+        "responseMode": "onReceived",
+        "options": {
+          "path": "crear-enlace",
+          "buttonLabel": "Crear enlace",
+          "appendAttribution": false
+        }
+      },
+      "id": "formulario-de-enlaces",
+      "name": "Formulario de enlaces",
+      "type": "n8n-nodes-base.formTrigger",
+      "typeVersion": 2.5,
+      "position": [
+        0,
+        300
+      ],
+      "webhookId": "00000000-0000-4000-8000-000000000025",
+      "credentials": {
+        "httpBasicAuth": {
+          "id": "formularioEquipo1",
+          "name": "Formulario del equipo (usuario y contraseña)"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "a1",
+              "name": "supabase_url",
+              "value": "https://TU-PROYECTO.supabase.co",
+              "type": "string"
+            },
+            {
+              "id": "a2",
+              "name": "from_email",
+              "value": "turnos@tu-dominio.com",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "configuraci-n",
+      "name": "Configuración",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        220,
+        300
+      ],
+      "notes": "Único sitio (por workflow) con la URL de Supabase y el remitente. La clave service_role NO va aquí: está en la credencial \"Supabase turnos (service role)\".",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Configuración').first().json.supabase_url }}/rest/v1/rpc/create_link",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ p_slug: $('Formulario de enlaces').first().json.slug, p_destination: $('Formulario de enlaces').first().json.destino ?? null, p_channel: $('Formulario de enlaces').first().json.canal ?? null }) }}",
+        "options": {}
+      },
+      "id": "crear-enlace",
+      "name": "Crear enlace",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        440,
+        300
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "supabaseTurnos1",
+          "name": "Supabase turnos (service role)"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "c1",
+                    "leftValue": "={{ $json.ok ? 'OK' : $json.error }}",
+                    "rightValue": "OK",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Creado"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "c1",
+                    "leftValue": "={{ $json.ok ? 'OK' : $json.error }}",
+                    "rightValue": "INVALID_SLUG",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Slug inválido"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "c1",
+                    "leftValue": "={{ $json.ok ? 'OK' : $json.error }}",
+                    "rightValue": "SLUG_TAKEN",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Slug en uso"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "c1",
+                    "leftValue": "={{ $json.ok ? 'OK' : $json.error }}",
+                    "rightValue": "DESTINATION_NOT_ALLOWED",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Destino no permitido"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "c1",
+                    "leftValue": "={{ $json.ok ? 'OK' : $json.error }}",
+                    "rightValue": "DESTINATION_LOOP",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Destino = dominio corto"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "c1",
+                    "leftValue": "={{ $json.ok ? 'OK' : $json.error }}",
+                    "rightValue": "DESTINATION_HAS_ORIGEN",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Destino con origen"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "c1",
+                    "leftValue": "={{ $json.ok ? 'OK' : $json.error }}",
+                    "rightValue": "INVALID_CHANNEL",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Canal inválido"
+            }
+          ]
+        },
+        "options": {
+          "fallbackOutput": "extra"
+        }
+      },
+      "id": "resultado-de-la-creaci-n",
+      "name": "Resultado de la creación",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "position": [
+        660,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Mensaje de «Enlace creado». Todo viene de create_link (destino ya validado), no del formulario.\nconst r = $input.first().json;\nconst mensaje = [\n  `Tu enlace corto ya funciona:`,\n  ``,\n  `${r.short_url}`,\n  ``,\n  `Redirige a: ${r.destination}`,\n  `Canal en las estadísticas: ${r.channel}`,\n  ``,\n  `Las reservas hechas desde este enlace se guardan con origen «${r.slug}».`,\n].join('\\n');\nreturn [{ json: { mensaje } }];\n"
+      },
+      "id": "mensaje-final",
+      "name": "Mensaje final",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        880,
+        40
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "completion",
+        "respondWith": "text",
+        "completionTitle": "Enlace creado",
+        "completionMessage": "={{ $json.mensaje }}",
+        "limitWaitTime": true,
+        "limitType": "afterTimeInterval",
+        "resumeAmount": 5,
+        "resumeUnit": "minutes",
+        "options": {}
+      },
+      "id": "enlace-creado",
+      "name": "Enlace creado",
+      "type": "n8n-nodes-base.form",
+      "typeVersion": 2.5,
+      "position": [
+        1100,
+        40
+      ],
+      "webhookId": "00000000-0000-4000-8000-000000000026"
+    },
+    {
+      "parameters": {
+        "operation": "completion",
+        "respondWith": "text",
+        "completionTitle": "Slug no válido",
+        "completionMessage": "El slug solo puede llevar minúsculas (a-z), números y guiones; sin guion al principio ni al final, sin guiones dobles y hasta 40 caracteres. Ejemplos: instagram, mi-campana-2. Vuelve a abrir el formulario y prueba de nuevo.",
+        "limitWaitTime": true,
+        "limitType": "afterTimeInterval",
+        "resumeAmount": 5,
+        "resumeUnit": "minutes",
+        "options": {}
+      },
+      "id": "fin-slug-inv-lido",
+      "name": "Fin · Slug inválido",
+      "type": "n8n-nodes-base.form",
+      "typeVersion": 2.5,
+      "position": [
+        880,
+        200
+      ],
+      "webhookId": "00000000-0000-4000-8000-000000000027"
+    },
+    {
+      "parameters": {
+        "operation": "completion",
+        "respondWith": "text",
+        "completionTitle": "Ese slug ya existe",
+        "completionMessage": "Ya hay un enlace con ese slug. Elige otro (o desactiva el anterior poniendo active = false en la tabla links de Supabase). Vuelve a abrir el formulario.",
+        "limitWaitTime": true,
+        "limitType": "afterTimeInterval",
+        "resumeAmount": 5,
+        "resumeUnit": "minutes",
+        "options": {}
+      },
+      "id": "fin-slug-en-uso",
+      "name": "Fin · Slug en uso",
+      "type": "n8n-nodes-base.form",
+      "typeVersion": 2.5,
+      "position": [
+        880,
+        340
+      ],
+      "webhookId": "00000000-0000-4000-8000-000000000028"
+    },
+    {
+      "parameters": {
+        "operation": "completion",
+        "respondWith": "text",
+        "completionTitle": "Destino no permitido",
+        "completionMessage": "El destino debe ser una dirección https:// de uno de los dominios permitidos (ajuste link_allowed_domains en Supabase). Si lo dejas vacío se usa el formulario de reserva (ajuste booking_form_url), que también debe estar en un dominio permitido.",
+        "limitWaitTime": true,
+        "limitType": "afterTimeInterval",
+        "resumeAmount": 5,
+        "resumeUnit": "minutes",
+        "options": {}
+      },
+      "id": "fin-destino-no-permitido",
+      "name": "Fin · Destino no permitido",
+      "type": "n8n-nodes-base.form",
+      "typeVersion": 2.5,
+      "position": [
+        880,
+        480
+      ],
+      "webhookId": "00000000-0000-4000-8000-000000000029"
+    },
+    {
+      "parameters": {
+        "operation": "completion",
+        "respondWith": "text",
+        "completionTitle": "Destino no válido",
+        "completionMessage": "El destino no puede ser el propio dominio de los enlaces cortos: redirigiría en círculo.",
+        "limitWaitTime": true,
+        "limitType": "afterTimeInterval",
+        "resumeAmount": 5,
+        "resumeUnit": "minutes",
+        "options": {}
+      },
+      "id": "fin-bucle",
+      "name": "Fin · Bucle",
+      "type": "n8n-nodes-base.form",
+      "typeVersion": 2.5,
+      "position": [
+        880,
+        620
+      ],
+      "webhookId": "00000000-0000-4000-8000-000000000030"
+    },
+    {
+      "parameters": {
+        "operation": "completion",
+        "respondWith": "text",
+        "completionTitle": "El destino ya lleva «origen»",
+        "completionMessage": "Quita el parámetro origen= del destino: el sistema lo añade solo, con el slug del enlace.",
+        "limitWaitTime": true,
+        "limitType": "afterTimeInterval",
+        "resumeAmount": 5,
+        "resumeUnit": "minutes",
+        "options": {}
+      },
+      "id": "fin-destino-con-origen",
+      "name": "Fin · Destino con origen",
+      "type": "n8n-nodes-base.form",
+      "typeVersion": 2.5,
+      "position": [
+        880,
+        760
+      ],
+      "webhookId": "00000000-0000-4000-8000-000000000031"
+    },
+    {
+      "parameters": {
+        "operation": "completion",
+        "respondWith": "text",
+        "completionTitle": "Canal no válido",
+        "completionMessage": "El canal también solo admite minúsculas, números y guiones (por ejemplo, instagram). Puedes dejarlo vacío.",
+        "limitWaitTime": true,
+        "limitType": "afterTimeInterval",
+        "resumeAmount": 5,
+        "resumeUnit": "minutes",
+        "options": {}
+      },
+      "id": "fin-canal-inv-lido",
+      "name": "Fin · Canal inválido",
+      "type": "n8n-nodes-base.form",
+      "typeVersion": 2.5,
+      "position": [
+        880,
+        900
+      ],
+      "webhookId": "00000000-0000-4000-8000-000000000032"
+    },
+    {
+      "parameters": {
+        "operation": "completion",
+        "respondWith": "text",
+        "completionTitle": "No hemos podido crear el enlace",
+        "completionMessage": "Ha ocurrido un problema inesperado. Inténtalo de nuevo en unos minutos.",
+        "limitWaitTime": true,
+        "limitType": "afterTimeInterval",
+        "resumeAmount": 5,
+        "resumeUnit": "minutes",
+        "options": {}
+      },
+      "id": "fin-error",
+      "name": "Fin · Error",
+      "type": "n8n-nodes-base.form",
+      "typeVersion": 2.5,
+      "position": [
+        880,
+        1040
+      ],
+      "webhookId": "00000000-0000-4000-8000-000000000033"
+    }
+  ],
+  "connections": {
+    "Formulario de enlaces": {
+      "main": [
+        [
+          {
+            "node": "Configuración",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Configuración": {
+      "main": [
+        [
+          {
+            "node": "Crear enlace",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Crear enlace": {
+      "main": [
+        [
+          {
+            "node": "Resultado de la creación",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Resultado de la creación": {
+      "main": [
+        [
+          {
+            "node": "Mensaje final",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Fin · Slug inválido",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Fin · Slug en uso",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Fin · Destino no permitido",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Fin · Bucle",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Fin · Destino con origen",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Fin · Canal inválido",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Fin · Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mensaje final": {
+      "main": [
+        [
+          {
+            "node": "Enlace creado",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "errorWorkflow": "turnosErrores1",
+    "timezone": "Europe/Madrid",
+    "saveDataSuccessExecution": "all",
+    "saveDataErrorExecution": "all",
+    "saveManualExecutions": false
+  },
+  "pinData": {},
+  "meta": {
+    "templateCredsSetupCompleted": false
+  }
+}

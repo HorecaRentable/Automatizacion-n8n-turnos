@@ -1,0 +1,21 @@
+{
+  "name": "turnos-tests",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "description": "Pruebas SQL del sistema de turnos contra un Postgres real local (embedded-postgres)",
+  "scripts": {
+    "test": "node run-tests.mjs",
+    "e2e": "node --disable-warning=ExperimentalWarning e2e/run-e2e.mjs ./e2e-work"
+  },
+  "dependencies": {
+    "embedded-postgres": "18.4.0-beta.17",
+    "pg": "8.23.1"
+  },
+  "devDependencies": {
+    "ical.js": "^2.2.1",
+    "mailparser": "^3.10.0",
+    "puppeteer-core": "^25.15.0",
+    "smtp-server": "^3.20.2"
+  }
+}

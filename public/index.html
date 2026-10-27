@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Proyecto n8n</title>
+  <style>
+    body {
+      font-family: system-ui, sans-serif;
+      background: #f3f4f6;
+      display: flex;
+      justify-content: center;
+      padding: 60px 16px;
+      margin: 0;
+    }
+    .tarjeta {
+      background: white;
+      padding: 32px;
+      border-radius: 12px;
+      box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08);
+      width: 100%;
+      max-width: 420px;
+    }
+    h1 { margin-top: 0; font-size: 1.4rem; }
+    input {
+      width: 100%;
+      padding: 10px;
+      font-size: 1rem;
+      border: 1px solid #ccc;
+      border-radius: 8px;
+      box-sizing: border-box;
+    }
+    button {
+      margin-top: 12px;
+      width: 100%;
+      padding: 10px;
+      font-size: 1rem;
+      border: none;
+      border-radius: 8px;
+      background: #ea4b71;
+      color: white;
+      cursor: pointer;
+    }
+    button:disabled { opacity: 0.6; cursor: wait; }
+    #respuesta {
+      margin-top: 20px;
+      padding: 14px;
+      border-radius: 8px;
+      background: #ecfdf5;
+      font-weight: bold;
+      display: none;
+    }
+    #respuesta.error { background: #fef2f2; color: #b91c1c; }
+  </style>
+</head>
+<body>
+  <div class="tarjeta">
+    <h1>Hablar con n8n</h1>
+
+    <!-- El formulario: cuadro de texto + botón -->
+    <form id="formulario">
+      <input id="mensaje" type="text" placeholder="Escribe algo..." autocomplete="off" />
+      <button id="boton" type="submit">Enviar</button>
+    </form>
+
+    <!-- Aquí aparecerá la respuesta de n8n -->
+    <div id="respuesta"></div>
+  </div>
+
+  <script>
+    // Guardamos referencias a los elementos de la página
+    const formulario = document.getElementById('formulario');
+    const campo = document.getElementById('mensaje');
+    const boton = document.getElementById('boton');
+    const cajaRespuesta = document.getElementById('respuesta');
+
+    // Función auxiliar para mostrar un texto (normal o de error)
+    function mostrar(texto, esError = false) {
+      cajaRespuesta.textContent = texto;
+      cajaRespuesta.className = esError ? 'error' : '';
+      cajaRespuesta.style.display = 'block';
+    }
+
+    // Cuando se pulsa "Enviar"...
+    formulario.addEventListener('submit', async (evento) => {
+      evento.preventDefault();          // Evita que la página se recargue
+      boton.disabled = true;
+      mostrar('Enviando...');
+
+      try {
+        // Mandamos el mensaje a NUESTRO servidor Node (ruta /api/enviar)
+        const respuesta = await fetch('/api/enviar', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ mensaje: campo.value }),
+        });
+        const datos = await respuesta.json();
+
+        if (respuesta.ok) {
+          mostrar(datos.respuesta);      // Esperamos ver: HOLA SOY N8N
+        } else {
+          mostrar(datos.error, true);
+        }
+      } catch (error) {
+        mostrar('No se pudo contactar con el servidor.', true);
+      } finally {
+        boton.disabled = false;
+      }
+    });
+  </script>
+</body>
+</html>

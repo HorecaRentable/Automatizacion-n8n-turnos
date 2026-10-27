@@ -1,0 +1,338 @@
+{
+  "id": "turnosEnlaces1",
+  "name": "Turnos · 06 Enlaces cortos",
+  "active": false,
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "GET",
+        "path": ":slug",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "enlace-corto",
+      "name": "Enlace corto",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        0,
+        300
+      ],
+      "webhookId": "6f1d2c4e-0a7b-4c1e-9d55-7a3e5b9c1f06"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "a1",
+              "name": "supabase_url",
+              "value": "https://TU-PROYECTO.supabase.co",
+              "type": "string"
+            },
+            {
+              "id": "a2",
+              "name": "from_email",
+              "value": "turnos@tu-dominio.com",
+              "type": "string"
+            },
+            {
+              "id": "a4",
+              "name": "url_respaldo",
+              "value": "https://rocketnova.io",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "configuraci-n",
+      "name": "Configuración",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        220,
+        300
+      ],
+      "notes": "Único sitio (por workflow) con la URL de Supabase y el remitente. La clave service_role NO va aquí: está en la credencial \"Supabase turnos (service role)\".",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Configuración').first().json.supabase_url }}/rest/v1/rpc/resolve_link",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ p_slug: String($('Enlace corto').first().json.params.slug ?? '').slice(0, 100).replace(/[^ -~]/g, '') }) }}",
+        "options": {}
+      },
+      "id": "resolver-enlace",
+      "name": "Resolver enlace",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        440,
+        300
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "supabaseTurnos1",
+          "name": "Supabase turnos (service role)"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Decide a dónde redirigir y si este clic cuenta. La redirección NUNCA espera al recuento (va después, ver workflow 06).\r\n//   · resolve_link ya devuelve un destino VALIDADO (dominio permitido + origen=<slug>); aquí no se construye ni se toca ninguna URL.\r\n//   · Si Supabase no responde, se redirige a la página de respaldo de «Configuración»: nadie se queda sin redirección.\r\n//   · Si resolve_link responde pero no hay ni página por defecto válida (url = null), no hay Location: se responde 404.\r\n//   · Cuenta solo si el enlace existe (found) y la visita parece de una persona: a los previsualizadores de enlaces,\r\n//     rastreadores, monitores y herramientas de línea de comandos se les redirige igual (la vista previa funciona), pero no suman.\r\nconst r = $input.first().json;\r\nconst conf = $('Configuración').first().json;\r\nconst req = $('Enlace corto').first().json;\r\nconst ua = String(req.headers?.['user-agent'] ?? '');\r\n\r\nconst BOT = /bot\\b|crawler|spider|slurp|preview|facebookexternalhit|facebot|embedly|bitlybot|whatsapp\\/|telegrambot|skypeuripreview|discordbot|slackbot|twitterbot|linkedinbot|pinterest|vkshare|headlesschrome|phantomjs|lighthouse|curl\\/|wget\\/|python-requests|python-urllib|go-http-client|java\\/|okhttp\\/|libwww|httpclient|axios\\/|node-fetch|undici|^node$|monitor|uptime|pingdom|statuscake/i;\r\nconst human = ua.length > 0 && !BOT.test(ua);\r\n\r\nconst respondio = r && r.ok === true && !r.error;       // false = Supabase caído / error de red\r\nlet location = respondio ? (r.url ?? null) : conf.url_respaldo;\r\n// Última barrera (el SQL ya lo garantiza): solo http(s) y caracteres imprimibles, nunca saltos de línea en la cabecera\r\nif (location !== null && !/^https?:\\/\\/[!-~]+$/.test(String(location))) location = null;\r\n\r\nreturn [{ json: {\r\n  location,\r\n  slug: respondio && r.found === true ? r.slug : null,\r\n  count: respondio && r.found === true && human && location !== null,\r\n  human,\r\n} }];\r\n"
+      },
+      "id": "preparar-redirecci-n",
+      "name": "Preparar redirección",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        660,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "c1",
+              "leftValue": "={{ $json.location !== null }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "hay-destino",
+      "name": "¿Hay destino?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        880,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "noData",
+        "options": {
+          "responseCode": 302,
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Location",
+                "value": "={{ $json.location }}"
+              },
+              {
+                "name": "Cache-Control",
+                "value": "no-store"
+              }
+            ]
+          }
+        }
+      },
+      "id": "redirigir-302",
+      "name": "Redirigir (302)",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        1100,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "c1",
+              "leftValue": "={{ $('Preparar redirección').first().json.count }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "cuenta-el-clic",
+      "name": "¿Cuenta el clic?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1320,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Configuración').first().json.supabase_url }}/rest/v1/rpc/register_click",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ p_slug: $('Preparar redirección').first().json.slug }) }}",
+        "options": {}
+      },
+      "id": "registrar-clic",
+      "name": "Registrar clic",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1540,
+        100
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "supabaseTurnos1",
+          "name": "Supabase turnos (service role)"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "Enlace no disponible.",
+        "options": {
+          "responseCode": 404
+        }
+      },
+      "id": "responder-404",
+      "name": "Responder 404",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        1100,
+        440
+      ]
+    }
+  ],
+  "connections": {
+    "Enlace corto": {
+      "main": [
+        [
+          {
+            "node": "Configuración",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Configuración": {
+      "main": [
+        [
+          {
+            "node": "Resolver enlace",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Resolver enlace": {
+      "main": [
+        [
+          {
+            "node": "Preparar redirección",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Preparar redirección": {
+      "main": [
+        [
+          {
+            "node": "¿Hay destino?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Hay destino?": {
+      "main": [
+        [
+          {
+            "node": "Redirigir (302)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Responder 404",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Redirigir (302)": {
+      "main": [
+        [
+          {
+            "node": "¿Cuenta el clic?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Cuenta el clic?": {
+      "main": [
+        [
+          {
+            "node": "Registrar clic",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "errorWorkflow": "turnosErrores1",
+    "timezone": "Europe/Madrid",
+    "saveDataSuccessExecution": "none",
+    "saveDataErrorExecution": "all",
+    "saveManualExecutions": false
+  },
+  "pinData": {},
+  "meta": {
+    "templateCredsSetupCompleted": false
+  }
+}

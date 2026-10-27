@@ -1,0 +1,373 @@
+{
+  "id": "turnosRecordatorios1",
+  "name": "Turnos · 04 Recordatorios",
+  "active": false,
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "*/15 * * * *"
+            }
+          ]
+        }
+      },
+      "id": "cada-15-minutos",
+      "name": "Cada 15 minutos",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "a1",
+              "name": "supabase_url",
+              "value": "https://TU-PROYECTO.supabase.co",
+              "type": "string"
+            },
+            {
+              "id": "a2",
+              "name": "from_email",
+              "value": "turnos@tu-dominio.com",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "configuraci-n",
+      "name": "Configuración",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        220,
+        300
+      ],
+      "notes": "Único sitio (por workflow) con la URL de Supabase y el remitente. La clave service_role NO va aquí: está en la credencial \"Supabase turnos (service role)\".",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Configuración').first().json.supabase_url }}/rest/v1/rpc/get_config",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "{}",
+        "options": {}
+      },
+      "id": "cargar-par-metros",
+      "name": "Cargar parámetros",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        440,
+        300
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "supabaseTurnos1",
+          "name": "Supabase turnos (service role)"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Configuración').first().json.supabase_url }}/rest/v1/rpc/claim_due_reminders",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "{}",
+        "options": {}
+      },
+      "id": "reclamar-recordatorios",
+      "name": "Reclamar recordatorios",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        660,
+        300
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "supabaseTurnos1",
+          "name": "Supabase turnos (service role)"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// ---- utilidades compartidas (se copian dentro de los nodos Code que las usan) ----\nconst esc = (s) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\"/g, '&quot;');\n\n// Fecha larga en español a partir de 'YYYY-MM-DD' (ya es la fecha LOCAL: la calcula la base de datos).\nconst fechaLarga = (ymd) => new Intl.DateTimeFormat('es-ES', {\n  timeZone: 'UTC', weekday: 'long', day: 'numeric', month: 'long', year: 'numeric',\n}).format(new Date(ymd + 'T12:00:00Z'));\n\n// --- .ics (RFC 5545): horas en UTC, así el cambio de hora no afecta ---\nconst icsEsc = (s) => String(s ?? '').replace(/\\\\/g, '\\\\\\\\').replace(/;/g, '\\\\;').replace(/,/g, '\\\\,').replace(/\\r?\\n/g, '\\\\n');\nconst icsFold = (line) => {                       // líneas de máx. 75 octetos\n  let out = '', cur = '', bytes = 0, first = true;\n  for (const ch of line) {\n    const b = Buffer.byteLength(ch);\n    if (bytes + b > (first ? 75 : 74)) { out += cur + '\\r\\n '; cur = ''; bytes = 0; first = false; }\n    cur += ch; bytes += b;\n  }\n  return out + cur;\n};\nconst icsTime = (iso) => iso.replace(/[-:]/g, '').replace(/\\.\\d+/, '');   // 2026-11-09T09:00:00Z -> 20261109T090000Z\n// sequence: versión del evento (la lleva la base de datos: 0 reserva, +1 por cada cambio o cancelación).\n// Sin indicarla se usa la de la Fase 1: 0 (confirmado) / 1 (cancelado).\nfunction buildIcs({ uid, start, end, summary, description, url, cancelled, sequence }) {\n  const now = new Date().toISOString().slice(0, 19) + 'Z';\n  const lines = [\n    'BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//Turnos//n8n//ES', 'CALSCALE:GREGORIAN', 'METHOD:PUBLISH',\n    'BEGIN:VEVENT',\n    `UID:${uid}@turnos`,\n    `DTSTAMP:${icsTime(now)}`,\n    `DTSTART:${icsTime(start)}`,\n    `DTEND:${icsTime(end)}`,\n    `SUMMARY:${icsEsc(summary)}`,\n    `DESCRIPTION:${icsEsc(description)}`,\n    url ? `URL:${url}` : null,\n    `STATUS:${cancelled ? 'CANCELLED' : 'CONFIRMED'}`,\n    `SEQUENCE:${sequence ?? (cancelled ? 1 : 0)}`,\n    ...(cancelled ? [] : ['BEGIN:VALARM', 'TRIGGER:-PT1H', 'ACTION:DISPLAY', 'DESCRIPTION:Recordatorio de turno', 'END:VALARM']),\n    'END:VEVENT', 'END:VCALENDAR',\n  ].filter(Boolean);\n  return lines.map(icsFold).join('\\r\\n') + '\\r\\n';\n}\n\n// --- enlaces de gestión: <url del formulario>?codigo=<código secreto> ---\nconst enlaceCon = (base, code) => {\n  const b = String(base ?? '');\n  return b ? b + (b.includes('?') ? '&' : '?') + 'codigo=' + code : '';\n};\nconst dmy = (ymd) => String(ymd).split('-').reverse().join('/');          // 2026-11-09 -> 09/11/2026\n\n// --- avisos a quien atiende (inmediatos y resumen): misma plantilla sencilla ---\n// filas: [[etiqueta, valor], ...]  ->  { text, html }\nfunction plantillaAviso(titulo, filas) {\n  const text = [titulo, '', ...filas.map(([k, v]) => `${k}: ${v}`)].join('\\n');\n  const html = `<div style=\"font-family:Arial,Helvetica,sans-serif;max-width:560px;margin:auto;color:#1f2937\">\n<h2 style=\"margin:0 0 12px\">${esc(titulo)}</h2>\n<table style=\"border-collapse:collapse\">${filas.map(([k, v]) => `<tr><td style=\"padding:4px 14px 4px 0;color:#6b7280;vertical-align:top\">${esc(k)}</td><td><b>${esc(v)}</b></td></tr>`).join('')}</table></div>`;\n  return { text, html };\n}\n// Destinatario del aviso: staff_email (o, si está vacío, admin_email: lo resuelve get_config); nunca queda sin destino.\nconst destinoPersonal = (cfg, conf) => cfg.staff_email || cfg.admin_email || conf.from_email;\n\n// Convierte los turnos RECLAMADOS por claim_due_reminders() en un correo cada uno.\n// Si no hay ninguno devuelve [] y el workflow termina (lo normal en casi todas las pasadas).\n// Los turnos que llegan aquí ya están marcados como reclamados en la base de datos: ninguna otra\n// ejecución (solapada o posterior) los enviará. Si el envío falla, \"Registrar fallo\" libera el reclamo.\nconst lista = $input.first().json.reminders ?? [];\nconst cfg = $('Cargar parámetros').first().json;       // get_config()\nconst conf = $('Configuración').first().json;\n\nreturn lista.map((r) => {\n  const fecha = fechaLarga(r.local_date);\n  const cancelar = enlaceCon(cfg.cancel_form_url, r.management_code);\n  const cambiar = enlaceCon(cfg.reschedule_form_url, r.management_code);\n  const es24 = r.kind === '24h';\n\n  const asunto = es24\n    ? `Recordatorio: tu turno de ${r.service_name} es el ${dmy(r.local_date)} a las ${r.local_time}`\n    : `Tu turno de ${r.service_name} es en 1 hora (${r.local_time})`;\n  const intro = es24\n    ? 'Te recordamos que tienes un turno dentro de 24 horas:'\n    : 'Te recordamos que tu turno empieza dentro de 1 hora:';\n\n  const text = [\n    `Hola ${r.customer_name},`, '',\n    intro,\n    `  ${r.service_name}`,\n    `  ${fecha} a las ${r.local_time} (hora de ${r.timezone})`, '',\n    ...(es24 && cancelar ? [`¿No puedes venir? Cancélalo aquí:`, cancelar, ''] : []),\n    ...(es24 && cambiar ? [`¿Prefieres otra hora? Cámbiala aquí:`, cambiar, ''] : []),\n    '¡Te esperamos!',\n  ].join('\\n');\n\n  const enlaces = es24 && (cancelar || cambiar)\n    ? `<p>${cancelar ? `¿No puedes venir? <a href=\"${esc(cancelar)}\">Cancela tu turno aquí</a>.` : ''} ${cambiar ? `¿Prefieres otra hora? <a href=\"${esc(cambiar)}\">Cámbiala aquí</a>.` : ''}</p>`\n    : '';\n  const html = `<div style=\"font-family:Arial,Helvetica,sans-serif;max-width:560px;margin:auto;color:#1f2937\">\n<h2 style=\"margin:0 0 12px\">${es24 ? 'Recordatorio de tu turno ⏰' : 'Tu turno es en 1 hora ⏰'}</h2>\n<p>Hola ${esc(r.customer_name)},</p>\n<p>${esc(intro)}</p>\n<p><b>${esc(r.service_name)}</b><br>${esc(fecha)} a las <b>${esc(r.local_time)}</b> (hora de ${esc(r.timezone)})</p>\n${enlaces}<p>¡Te esperamos!</p></div>`;\n\n  return { json: {\n    booking_id: r.booking_id, kind: r.kind, claimed_at: r.claimed_at, attempt: r.attempt,\n    from: conf.from_email, to: r.customer_email, subject: asunto, text, html,\n  } };\n});\n"
+      },
+      "id": "preparar-recordatorios",
+      "name": "Preparar recordatorios",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        880,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "fromEmail": "={{ $json.from }}",
+        "toEmail": "={{ $json.to }}",
+        "subject": "={{ $json.subject }}",
+        "emailFormat": "both",
+        "text": "={{ $json.text }}",
+        "html": "={{ $json.html }}",
+        "options": {
+          "appendAttribution": false
+        }
+      },
+      "id": "enviar-recordatorio",
+      "name": "Enviar recordatorio",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        1100,
+        300
+      ],
+      "credentials": {
+        "smtp": {
+          "id": "smtpTurnos1",
+          "name": "SMTP turnos"
+        }
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Configuración').first().json.supabase_url }}/rest/v1/rpc/report_reminder",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ p_booking_id: $('Preparar recordatorios').item.json.booking_id, p_kind: $('Preparar recordatorios').item.json.kind, p_claimed_at: $('Preparar recordatorios').item.json.claimed_at, p_ok: true, p_error: null, p_to: $('Preparar recordatorios').item.json.to }) }}",
+        "options": {}
+      },
+      "id": "registrar-env-o",
+      "name": "Registrar envío",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1320,
+        200
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "supabaseTurnos1",
+          "name": "Supabase turnos (service role)"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Configuración').first().json.supabase_url }}/rest/v1/rpc/report_reminder",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ p_booking_id: $('Preparar recordatorios').item.json.booking_id, p_kind: $('Preparar recordatorios').item.json.kind, p_claimed_at: $('Preparar recordatorios').item.json.claimed_at, p_ok: false, p_error: String($json.error?.message ?? $json.error ?? 'error desconocido'), p_to: $('Preparar recordatorios').item.json.to }) }}",
+        "options": {}
+      },
+      "id": "registrar-fallo",
+      "name": "Registrar fallo",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1320,
+        420
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "supabaseTurnos1",
+          "name": "Supabase turnos (service role)"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "c1",
+              "leftValue": "={{ $json.gave_up }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "se-agotaron-los-intentos",
+      "name": "¿Se agotaron los intentos?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1540,
+        420
+      ]
+    },
+    {
+      "parameters": {
+        "fromEmail": "={{ $('Configuración').first().json.from_email }}",
+        "toEmail": "={{ $('Cargar parámetros').first().json.admin_email }}",
+        "subject": "=[Turnos] Un recordatorio no se pudo enviar",
+        "emailFormat": "text",
+        "text": "=El recordatorio de {{ $('Preparar recordatorios').item.json.kind }} de la reserva {{ $('Preparar recordatorios').item.json.booking_id }} falló {{ $json.attempts }} veces y ya no se reintentará. Revisa la tabla email_log en Supabase (kind = reminder_{{ $('Preparar recordatorios').item.json.kind }}, status = failed).",
+        "options": {
+          "appendAttribution": false
+        }
+      },
+      "id": "avisar-al-administrador",
+      "name": "Avisar al administrador",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        1760,
+        420
+      ],
+      "credentials": {
+        "smtp": {
+          "id": "smtpTurnos1",
+          "name": "SMTP turnos"
+        }
+      },
+      "onError": "continueRegularOutput"
+    }
+  ],
+  "connections": {
+    "Cada 15 minutos": {
+      "main": [
+        [
+          {
+            "node": "Configuración",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Configuración": {
+      "main": [
+        [
+          {
+            "node": "Cargar parámetros",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Cargar parámetros": {
+      "main": [
+        [
+          {
+            "node": "Reclamar recordatorios",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Reclamar recordatorios": {
+      "main": [
+        [
+          {
+            "node": "Preparar recordatorios",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Preparar recordatorios": {
+      "main": [
+        [
+          {
+            "node": "Enviar recordatorio",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Enviar recordatorio": {
+      "main": [
+        [
+          {
+            "node": "Registrar envío",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Registrar fallo",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Registrar fallo": {
+      "main": [
+        [
+          {
+            "node": "¿Se agotaron los intentos?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Se agotaron los intentos?": {
+      "main": [
+        [
+          {
+            "node": "Avisar al administrador",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "errorWorkflow": "turnosErrores1",
+    "timezone": "Europe/Madrid",
+    "saveDataSuccessExecution": "none",
+    "saveDataErrorExecution": "all",
+    "saveManualExecutions": false
+  },
+  "pinData": {},
+  "meta": {
+    "templateCredsSetupCompleted": false
+  }
+}

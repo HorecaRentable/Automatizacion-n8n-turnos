@@ -1,0 +1,33 @@
+[
+  {
+    "id": "supabaseTurnos1",
+    "name": "Supabase turnos (service role)",
+    "type": "supabaseApi",
+    "data": {
+      "host": "https://TU-PROYECTO.supabase.co",
+      "serviceRole": "PEGA_AQUI_LA_SERVICE_ROLE_KEY"
+    }
+  },
+  {
+    "id": "smtpTurnos1",
+    "name": "SMTP turnos",
+    "type": "smtp",
+    "data": {
+      "user": "usuario@tu-dominio.com",
+      "password": "CONTRASEÑA_SMTP",
+      "host": "smtp.tu-dominio.com",
+      "port": 465,
+      "secure": true,
+      "disableStartTls": false
+    }
+  },
+  {
+    "id": "formularioEquipo1",
+    "name": "Formulario del equipo (usuario y contraseña)",
+    "type": "httpBasicAuth",
+    "data": {
+      "user": "equipo",
+      "password": "PON_AQUI_UNA_CONTRASEÑA_LARGA"
+    }
+  }
+]

@@ -1,0 +1,1334 @@
+{
+  "id": "turnosReservar1",
+  "name": "Turnos · 01 Reservar",
+  "active": false,
+  "nodes": [
+    {
+      "parameters": {
+        "formTitle": "Reserva tu turno",
+        "formDescription": "Reserva, en un minuto y sin crear cuenta, tu turno. Después podrás cancelarlo desde el enlace del correo de confirmación.",
+        "formFields": {
+          "values": [
+            {
+              "fieldType": "html",
+              "elementName": "bienvenida",
+              "html": "<p>Pulsa <b>Reservar un turno</b> para elegir servicio, día y hora. Te enviaremos la confirmación por correo, con un archivo para tu calendario.</p>"
+            },
+            {
+              "fieldType": "hiddenField",
+              "fieldName": "origen",
+              "fieldValue": ""
+            }
+          ]
+        },
+        "responseMode": "onReceived",
+        "options": {
+          "path": "reservar-turno",
+          "buttonLabel": "Reservar un turno",
+          "appendAttribution": false
+        }
+      },
+      "id": "formulario-de-reserva",
+      "name": "Formulario de reserva",
+      "type": "n8n-nodes-base.formTrigger",
+      "typeVersion": 2.5,
+      "position": [
+        0,
+        300
+      ],
+      "webhookId": "00000000-0000-4000-8000-000000000001"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "a1",
+              "name": "supabase_url",
+              "value": "https://TU-PROYECTO.supabase.co",
+              "type": "string"
+            },
+            {
+              "id": "a2",
+              "name": "from_email",
+              "value": "turnos@tu-dominio.com",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "configuraci-n",
+      "name": "Configuración",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        220,
+        300
+      ],
+      "notes": "Único sitio (por workflow) con la URL de Supabase y el remitente. La clave service_role NO va aquí: está en la credencial \"Supabase turnos (service role)\".",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Configuración').first().json.supabase_url }}/rest/v1/rpc/get_config",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "{}",
+        "options": {}
+      },
+      "id": "cargar-par-metros",
+      "name": "Cargar parámetros",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        440,
+        300
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "supabaseTurnos1",
+          "name": "Supabase turnos (service role)"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Configuración').first().json.supabase_url }}/rest/v1/rpc/list_active_services",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "{}",
+        "options": {}
+      },
+      "id": "cargar-servicios",
+      "name": "Cargar servicios",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        660,
+        300
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "supabaseTurnos1",
+          "name": "Supabase turnos (service role)"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Prepara la página 1 del formulario: servicios activos (desde Supabase) y, si venimos de un\n// reintento por datos no válidos, los datos ya escritos para no perderlos.\nconst services = $('Cargar servicios').first().json.services ?? [];\n\nlet retry = {};\ntry { if ($('Reintento datos').isExecuted) retry = $('Reintento datos').last().json; } catch (e) { /* primera vez */ }\nconst p = retry.prefill ?? {};\n\nconst fields = [\n  { fieldLabel: 'Servicio', fieldType: 'dropdown', requiredField: true,\n    defaultValue: p.servicio ?? '',\n    fieldOptions: { values: services.map((s) => ({ option: s.name })) } },\n  { fieldLabel: 'Día deseado', fieldType: 'date', requiredField: true, defaultValue: p.dia ?? '' },\n  { fieldLabel: 'Nombre y apellidos', fieldType: 'text', requiredField: true, placeholder: 'Ana Pérez', defaultValue: p.nombre ?? '' },\n  { fieldLabel: 'Correo electrónico', fieldType: 'email', requiredField: true, placeholder: 'ana@ejemplo.com', defaultValue: p.email ?? '' },\n  { fieldLabel: 'Teléfono', fieldType: 'text', requiredField: true, placeholder: '+34 600 123 456', defaultValue: p.telefono ?? '' },\n  { fieldLabel: 'Privacidad', fieldType: 'checkbox', requiredField: true,\n    fieldOptions: { values: [{ option: 'He leído y acepto la política de privacidad' }] } },\n];\n\nconst description = (retry.error ? `⚠️ ${retry.error}\\n\\n` : '')\n  + 'Usaremos tus datos solo para gestionar tu turno. En el siguiente paso verás las horas libres del día elegido.';\n\nreturn [{ json: { services, fields, description, hasServices: services.length > 0 } }];\n"
+      },
+      "id": "preparar-p-gina-1",
+      "name": "Preparar página 1",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        880,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "page",
+        "defineForm": "json",
+        "jsonOutput": "={{ $('Preparar página 1').last().json.fields }}",
+        "limitWaitTime": true,
+        "limitType": "afterTimeInterval",
+        "resumeAmount": 60,
+        "resumeUnit": "minutes",
+        "options": {
+          "formTitle": "Tus datos",
+          "formDescription": "={{ $('Preparar página 1').last().json.description }}",
+          "buttonLabel": "Ver horas libres"
+        }
+      },
+      "id": "p-gina-1-datos",
+      "name": "Página 1 · Datos",
+      "type": "n8n-nodes-base.form",
+      "typeVersion": 2.5,
+      "position": [
+        1100,
+        300
+      ],
+      "webhookId": "00000000-0000-4000-8000-000000000002"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Valida la página 1. (La base de datos vuelve a validar todo al reservar: esto es solo para\n// dar un mensaje claro y dejar al usuario corregir sin perder lo escrito.)\nconst s = $input.first().json;\n// Si la persona abandonó la página, al vencer la espera n8n continúa SIN datos del formulario: se termina aquí.\nif (s['Servicio'] === undefined && s['Correo electrónico'] === undefined) return [{ json: { ok: false, abandoned: true } }];\nconst services = $('Preparar página 1').last().json.services ?? [];\n\nconst serviceName = String(s['Servicio'] ?? '');\nconst day = String(s['Día deseado'] ?? '').trim();\nconst name = String(s['Nombre y apellidos'] ?? '').trim();\nconst email = String(s['Correo electrónico'] ?? '').trim().toLowerCase();\nconst phone = String(s['Teléfono'] ?? '').trim();\nconst privacy = Array.isArray(s['Privacidad']) ? s['Privacidad'].length > 0 : Boolean(s['Privacidad']);\n\nconst prefill = { servicio: serviceName, dia: day, nombre: name, email, telefono: phone };\nconst digits = phone.replace(/\\D/g, '').length;\nconst svc = services.find((x) => x.name === serviceName);\n\nlet error = null;\nif (!svc) error = 'Elige un servicio de la lista.';\nelse if (!/^\\d{4}-\\d{2}-\\d{2}$/.test(day)) error = 'Elige un día válido.';\nelse if (!name || name.length > 120) error = 'Escribe tu nombre.';\nelse if (email.length > 254 || !/^[^@\\s]+@[^@\\s]+\\.[^@\\s]{2,}$/.test(email)) error = 'El correo electrónico no parece válido.';\nelse if (!/^\\+?[0-9][0-9 ().-]{5,24}$/.test(phone) || digits < 7 || digits > 15) error = 'El teléfono no es válido (usa números, espacios y, si quieres, el prefijo +34).';\nelse if (!privacy) error = 'Para reservar debes aceptar la política de privacidad.';\n\nreturn [{ json: error\n  ? { ok: false, error, prefill }\n  : { ok: true, prefill, data: { service_id: svc.id, service_name: svc.name, day, name, email, phone } } }];\n"
+      },
+      "id": "validar-datos",
+      "name": "Validar datos",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1320,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "c1",
+              "leftValue": "={{ $json.ok }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "datos-v-lidos",
+      "name": "¿Datos válidos?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1540,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Prepara la vuelta a la página 1 conservando lo escrito.\n// Llega desde \"¿Datos válidos?\" (error en texto) o desde la reserva (INVALID_INPUT de la base de datos).\nconst j = $input.first().json;\nif (j.abandoned) return [];   // formulario abandonado (venció la espera): no hay nada que reintentar\nlet prefill = j.prefill;\nlet error = j.error;\n\nif (j.error === 'INVALID_INPUT' || !prefill) {\n  prefill = $('Validar datos').last().json.prefill;\n  const campo = { name: 'tu nombre', email: 'tu correo electrónico', phone: 'tu teléfono' }[j.field] ?? 'los datos';\n  error = `Revisa ${campo}.`;\n}\nreturn [{ json: { error, prefill } }];\n"
+      },
+      "id": "reintento-datos",
+      "name": "Reintento datos",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1540,
+        560
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Punto único de entrada a \"ver horas libres\". Lo alimentan tres caminos:\n//   · datos válidos de la página 1          · cambio de día (día completo)\n//   · \"Ese turno acaba de ocuparse\" (vuelve a elegir hora SIN perder los datos)\n// Todos traen { data, notice? }.\nconst j = $input.first().json;\nreturn [{ json: {\n  state: { data: j.data, notice: j.notice ?? null },\n  p_service_id: j.data.service_id,\n  p_day: j.data.day,\n} }];\n"
+      },
+      "id": "preparar-consulta",
+      "name": "Preparar consulta",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1760,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Configuración').first().json.supabase_url }}/rest/v1/rpc/get_availability",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ p_service_id: $json.p_service_id, p_day: $json.p_day }) }}",
+        "options": {}
+      },
+      "id": "consultar-disponibilidad",
+      "name": "Consultar disponibilidad",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1980,
+        300
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "supabaseTurnos1",
+          "name": "Supabase turnos (service role)"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// ---- utilidades compartidas (se copian dentro de los nodos Code que las usan) ----\nconst esc = (s) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\"/g, '&quot;');\n\n// Fecha larga en español a partir de 'YYYY-MM-DD' (ya es la fecha LOCAL: la calcula la base de datos).\nconst fechaLarga = (ymd) => new Intl.DateTimeFormat('es-ES', {\n  timeZone: 'UTC', weekday: 'long', day: 'numeric', month: 'long', year: 'numeric',\n}).format(new Date(ymd + 'T12:00:00Z'));\n\n// --- .ics (RFC 5545): horas en UTC, así el cambio de hora no afecta ---\nconst icsEsc = (s) => String(s ?? '').replace(/\\\\/g, '\\\\\\\\').replace(/;/g, '\\\\;').replace(/,/g, '\\\\,').replace(/\\r?\\n/g, '\\\\n');\nconst icsFold = (line) => {                       // líneas de máx. 75 octetos\n  let out = '', cur = '', bytes = 0, first = true;\n  for (const ch of line) {\n    const b = Buffer.byteLength(ch);\n    if (bytes + b > (first ? 75 : 74)) { out += cur + '\\r\\n '; cur = ''; bytes = 0; first = false; }\n    cur += ch; bytes += b;\n  }\n  return out + cur;\n};\nconst icsTime = (iso) => iso.replace(/[-:]/g, '').replace(/\\.\\d+/, '');   // 2026-11-09T09:00:00Z -> 20261109T090000Z\n// sequence: versión del evento (la lleva la base de datos: 0 reserva, +1 por cada cambio o cancelación).\n// Sin indicarla se usa la de la Fase 1: 0 (confirmado) / 1 (cancelado).\nfunction buildIcs({ uid, start, end, summary, description, url, cancelled, sequence }) {\n  const now = new Date().toISOString().slice(0, 19) + 'Z';\n  const lines = [\n    'BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//Turnos//n8n//ES', 'CALSCALE:GREGORIAN', 'METHOD:PUBLISH',\n    'BEGIN:VEVENT',\n    `UID:${uid}@turnos`,\n    `DTSTAMP:${icsTime(now)}`,\n    `DTSTART:${icsTime(start)}`,\n    `DTEND:${icsTime(end)}`,\n    `SUMMARY:${icsEsc(summary)}`,\n    `DESCRIPTION:${icsEsc(description)}`,\n    url ? `URL:${url}` : null,\n    `STATUS:${cancelled ? 'CANCELLED' : 'CONFIRMED'}`,\n    `SEQUENCE:${sequence ?? (cancelled ? 1 : 0)}`,\n    ...(cancelled ? [] : ['BEGIN:VALARM', 'TRIGGER:-PT1H', 'ACTION:DISPLAY', 'DESCRIPTION:Recordatorio de turno', 'END:VALARM']),\n    'END:VEVENT', 'END:VCALENDAR',\n  ].filter(Boolean);\n  return lines.map(icsFold).join('\\r\\n') + '\\r\\n';\n}\n\n// --- enlaces de gestión: <url del formulario>?codigo=<código secreto> ---\nconst enlaceCon = (base, code) => {\n  const b = String(base ?? '');\n  return b ? b + (b.includes('?') ? '&' : '?') + 'codigo=' + code : '';\n};\nconst dmy = (ymd) => String(ymd).split('-').reverse().join('/');          // 2026-11-09 -> 09/11/2026\n\n// --- avisos a quien atiende (inmediatos y resumen): misma plantilla sencilla ---\n// filas: [[etiqueta, valor], ...]  ->  { text, html }\nfunction plantillaAviso(titulo, filas) {\n  const text = [titulo, '', ...filas.map(([k, v]) => `${k}: ${v}`)].join('\\n');\n  const html = `<div style=\"font-family:Arial,Helvetica,sans-serif;max-width:560px;margin:auto;color:#1f2937\">\n<h2 style=\"margin:0 0 12px\">${esc(titulo)}</h2>\n<table style=\"border-collapse:collapse\">${filas.map(([k, v]) => `<tr><td style=\"padding:4px 14px 4px 0;color:#6b7280;vertical-align:top\">${esc(k)}</td><td><b>${esc(v)}</b></td></tr>`).join('')}</table></div>`;\n  return { text, html };\n}\n// Destinatario del aviso: staff_email (o, si está vacío, admin_email: lo resuelve get_config); nunca queda sin destino.\nconst destinoPersonal = (cfg, conf) => cfg.staff_email || cfg.admin_email || conf.from_email;\n\nconst st = $('Preparar consulta').last().json.state;\nconst av = $input.first().json;            // { day, timezone, slots:[{starts_at,label}], next_days:[{day,free_slots}] }\nconst d = st.data;\nconst slots = av.slots ?? [];\nconst dayLabel = fechaLarga(av.day);\n\nconst fields = [{\n  fieldLabel: 'Hora', fieldType: 'dropdown', requiredField: true,\n  fieldOptions: { values: slots.map((s) => ({ option: s.label })) },\n}];\n\nreturn [{ json: {\n  data: d,\n  tz: av.timezone,\n  dayLabel,\n  slots,\n  nextDays: av.next_days ?? [],\n  hasSlots: slots.length > 0,\n  hasNextDays: (av.next_days ?? []).length > 0,\n  fields,\n  description: (st.notice ? `${st.notice}\\n\\n` : '') + `${d.service_name} · ${dayLabel}. Horas libres (hora de ${av.timezone}):`,\n} }];\n"
+      },
+      "id": "preparar-p-gina-de-horas",
+      "name": "Preparar página de horas",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2200,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "c1",
+              "leftValue": "={{ $json.hasSlots }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "hay-horas-libres",
+      "name": "¿Hay horas libres?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        2420,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "page",
+        "defineForm": "json",
+        "jsonOutput": "={{ $('Preparar página de horas').last().json.fields }}",
+        "limitWaitTime": true,
+        "limitType": "afterTimeInterval",
+        "resumeAmount": 60,
+        "resumeUnit": "minutes",
+        "options": {
+          "formTitle": "Elige tu hora",
+          "formDescription": "={{ $('Preparar página de horas').last().json.description }}",
+          "buttonLabel": "Reservar turno"
+        }
+      },
+      "id": "p-gina-2-hora",
+      "name": "Página 2 · Hora",
+      "type": "n8n-nodes-base.form",
+      "typeVersion": 2.5,
+      "position": [
+        2640,
+        200
+      ],
+      "webhookId": "00000000-0000-4000-8000-000000000003"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Convierte la hora elegida en el desplegable (\"09:30\") en el instante exacto (UTC) que ofreció la base de datos.\nif ($input.first().json['Hora'] === undefined) return [];   // formulario abandonado (venció la espera): fin\nconst p = $('Preparar página de horas').last().json;\nconst elegida = String($input.first().json['Hora'] ?? '');\nconst slot = p.slots.find((s) => s.label === elegida);\nconst d = p.data;\n\n// Fase 3: el origen (slug del enlace corto) llega en el campo oculto «origen» del formulario (se rellena con ?origen=...).\n// Se copia tal cual solo si tiene forma de slug; si no, se descarta: una reserva nunca debe fallar por un origen raro\n// (la base de datos lo vuelve a normalizar). Fallback: el parámetro de la URL.\nlet origen = null;\ntry {\n  const t = $('Formulario de reserva').first().json;\n  const bruto = String(t.origen ?? t.formQueryParameters?.origen ?? '').trim().toLowerCase();\n  if (/^[a-z0-9]+(-[a-z0-9]+)*$/.test(bruto) && bruto.length <= 40) origen = bruto;\n} catch (e) { /* sin origen */ }\n\nreturn [{ json: { body: {\n  p_service_id: d.service_id,\n  p_starts_at: slot ? slot.starts_at : null,     // null -> la función responde SLOT_TAKEN\n  p_name: d.name,\n  p_email: d.email,\n  p_phone: d.phone,\n  p_consent: true,                                // solo se llega aquí si aceptó la privacidad\n  p_source: origen,\n} } }];\n"
+      },
+      "id": "preparar-reserva",
+      "name": "Preparar reserva",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2860,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Configuración').first().json.supabase_url }}/rest/v1/rpc/book_slot",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.body) }}",
+        "options": {}
+      },
+      "id": "reservar-turno",
+      "name": "Reservar turno",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        3080,
+        200
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "supabaseTurnos1",
+          "name": "Supabase turnos (service role)"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "c1",
+                    "leftValue": "={{ $json.ok ? 'OK' : $json.error }}",
+                    "rightValue": "OK",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Reservado"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "c1",
+                    "leftValue": "={{ $json.ok ? 'OK' : $json.error }}",
+                    "rightValue": "SLOT_TAKEN",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Hueco ocupado"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "c1",
+                    "leftValue": "={{ $json.ok ? 'OK' : $json.error }}",
+                    "rightValue": "ALREADY_HAS_BOOKING",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Ya tiene turno"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "c1",
+                    "leftValue": "={{ $json.ok ? 'OK' : $json.error }}",
+                    "rightValue": "INVALID_INPUT",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Datos inválidos"
+            }
+          ]
+        },
+        "options": {
+          "fallbackOutput": "extra"
+        }
+      },
+      "id": "resultado-de-la-reserva",
+      "name": "Resultado de la reserva",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "position": [
+        3300,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Alguien reservó ese hueco un instante antes: se vuelve a la lista de horas con aviso, conservando los datos.\nreturn [{ json: {\n  data: $('Preparar consulta').last().json.state.data,\n  notice: '⚠️ Ese turno acaba de ocuparse. Elige otra hora.',\n} }];\n"
+      },
+      "id": "turno-ocupado",
+      "name": "Turno ocupado",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3520,
+        460
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "c1",
+              "leftValue": "={{ $json.hasNextDays }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "hay-otros-d-as",
+      "name": "¿Hay otros días?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        2640,
+        480
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// ---- utilidades compartidas (se copian dentro de los nodos Code que las usan) ----\nconst esc = (s) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\"/g, '&quot;');\n\n// Fecha larga en español a partir de 'YYYY-MM-DD' (ya es la fecha LOCAL: la calcula la base de datos).\nconst fechaLarga = (ymd) => new Intl.DateTimeFormat('es-ES', {\n  timeZone: 'UTC', weekday: 'long', day: 'numeric', month: 'long', year: 'numeric',\n}).format(new Date(ymd + 'T12:00:00Z'));\n\n// --- .ics (RFC 5545): horas en UTC, así el cambio de hora no afecta ---\nconst icsEsc = (s) => String(s ?? '').replace(/\\\\/g, '\\\\\\\\').replace(/;/g, '\\\\;').replace(/,/g, '\\\\,').replace(/\\r?\\n/g, '\\\\n');\nconst icsFold = (line) => {                       // líneas de máx. 75 octetos\n  let out = '', cur = '', bytes = 0, first = true;\n  for (const ch of line) {\n    const b = Buffer.byteLength(ch);\n    if (bytes + b > (first ? 75 : 74)) { out += cur + '\\r\\n '; cur = ''; bytes = 0; first = false; }\n    cur += ch; bytes += b;\n  }\n  return out + cur;\n};\nconst icsTime = (iso) => iso.replace(/[-:]/g, '').replace(/\\.\\d+/, '');   // 2026-11-09T09:00:00Z -> 20261109T090000Z\n// sequence: versión del evento (la lleva la base de datos: 0 reserva, +1 por cada cambio o cancelación).\n// Sin indicarla se usa la de la Fase 1: 0 (confirmado) / 1 (cancelado).\nfunction buildIcs({ uid, start, end, summary, description, url, cancelled, sequence }) {\n  const now = new Date().toISOString().slice(0, 19) + 'Z';\n  const lines = [\n    'BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//Turnos//n8n//ES', 'CALSCALE:GREGORIAN', 'METHOD:PUBLISH',\n    'BEGIN:VEVENT',\n    `UID:${uid}@turnos`,\n    `DTSTAMP:${icsTime(now)}`,\n    `DTSTART:${icsTime(start)}`,\n    `DTEND:${icsTime(end)}`,\n    `SUMMARY:${icsEsc(summary)}`,\n    `DESCRIPTION:${icsEsc(description)}`,\n    url ? `URL:${url}` : null,\n    `STATUS:${cancelled ? 'CANCELLED' : 'CONFIRMED'}`,\n    `SEQUENCE:${sequence ?? (cancelled ? 1 : 0)}`,\n    ...(cancelled ? [] : ['BEGIN:VALARM', 'TRIGGER:-PT1H', 'ACTION:DISPLAY', 'DESCRIPTION:Recordatorio de turno', 'END:VALARM']),\n    'END:VEVENT', 'END:VCALENDAR',\n  ].filter(Boolean);\n  return lines.map(icsFold).join('\\r\\n') + '\\r\\n';\n}\n\n// --- enlaces de gestión: <url del formulario>?codigo=<código secreto> ---\nconst enlaceCon = (base, code) => {\n  const b = String(base ?? '');\n  return b ? b + (b.includes('?') ? '&' : '?') + 'codigo=' + code : '';\n};\nconst dmy = (ymd) => String(ymd).split('-').reverse().join('/');          // 2026-11-09 -> 09/11/2026\n\n// --- avisos a quien atiende (inmediatos y resumen): misma plantilla sencilla ---\n// filas: [[etiqueta, valor], ...]  ->  { text, html }\nfunction plantillaAviso(titulo, filas) {\n  const text = [titulo, '', ...filas.map(([k, v]) => `${k}: ${v}`)].join('\\n');\n  const html = `<div style=\"font-family:Arial,Helvetica,sans-serif;max-width:560px;margin:auto;color:#1f2937\">\n<h2 style=\"margin:0 0 12px\">${esc(titulo)}</h2>\n<table style=\"border-collapse:collapse\">${filas.map(([k, v]) => `<tr><td style=\"padding:4px 14px 4px 0;color:#6b7280;vertical-align:top\">${esc(k)}</td><td><b>${esc(v)}</b></td></tr>`).join('')}</table></div>`;\n  return { text, html };\n}\n// Destinatario del aviso: staff_email (o, si está vacío, admin_email: lo resuelve get_config); nunca queda sin destino.\nconst destinoPersonal = (cfg, conf) => cfg.staff_email || cfg.admin_email || conf.from_email;\n\n// El día elegido está lleno: se ofrecen los próximos días con huecos.\nconst p = $input.first().json;\nconst opciones = p.nextDays.map((n) => ({\n  day: n.day,\n  label: `${fechaLarga(n.day)} · ${n.free_slots} ${n.free_slots === 1 ? 'hora libre' : 'horas libres'}`,\n}));\nreturn [{ json: {\n  data: p.data,\n  opciones,\n  fields: [{ fieldLabel: 'Otro día', fieldType: 'dropdown', requiredField: true,\n             fieldOptions: { values: opciones.map((o) => ({ option: o.label })) } }],\n  description: `No quedan horas libres el ${p.dayLabel}. Estos son los próximos días con huecos:`,\n} }];\n"
+      },
+      "id": "preparar-p-gina-de-d-as",
+      "name": "Preparar página de días",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2860,
+        480
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "page",
+        "defineForm": "json",
+        "jsonOutput": "={{ $('Preparar página de días').last().json.fields }}",
+        "limitWaitTime": true,
+        "limitType": "afterTimeInterval",
+        "resumeAmount": 60,
+        "resumeUnit": "minutes",
+        "options": {
+          "formTitle": "Ese día está completo",
+          "formDescription": "={{ $('Preparar página de días').last().json.description }}",
+          "buttonLabel": "Ver horas libres"
+        }
+      },
+      "id": "p-gina-d-a-completo",
+      "name": "Página · Día completo",
+      "type": "n8n-nodes-base.form",
+      "typeVersion": 2.5,
+      "position": [
+        3080,
+        480
+      ],
+      "webhookId": "00000000-0000-4000-8000-000000000004"
+    },
+    {
+      "parameters": {
+        "jsCode": "if ($input.first().json['Otro día'] === undefined) return [];   // formulario abandonado (venció la espera): fin\nconst prep = $('Preparar página de días').last().json;\nconst elegido = prep.opciones.find((o) => o.label === $input.first().json['Otro día']) ?? prep.opciones[0];\nreturn [{ json: { data: { ...prep.data, day: elegido.day }, notice: null } }];\n"
+      },
+      "id": "elegir-otro-d-a",
+      "name": "Elegir otro día",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3300,
+        480
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "completion",
+        "respondWith": "text",
+        "completionTitle": "No hay turnos disponibles",
+        "completionMessage": "Ahora mismo no quedan horas libres en los próximos días para este servicio. Vuelve a intentarlo más adelante.",
+        "limitWaitTime": true,
+        "limitType": "afterTimeInterval",
+        "resumeAmount": 5,
+        "resumeUnit": "minutes",
+        "options": {}
+      },
+      "id": "fin-sin-disponibilidad",
+      "name": "Fin · Sin disponibilidad",
+      "type": "n8n-nodes-base.form",
+      "typeVersion": 2.5,
+      "position": [
+        2860,
+        700
+      ],
+      "webhookId": "00000000-0000-4000-8000-000000000005"
+    },
+    {
+      "parameters": {
+        "jsCode": "// ---- utilidades compartidas (se copian dentro de los nodos Code que las usan) ----\nconst esc = (s) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\"/g, '&quot;');\n\n// Fecha larga en español a partir de 'YYYY-MM-DD' (ya es la fecha LOCAL: la calcula la base de datos).\nconst fechaLarga = (ymd) => new Intl.DateTimeFormat('es-ES', {\n  timeZone: 'UTC', weekday: 'long', day: 'numeric', month: 'long', year: 'numeric',\n}).format(new Date(ymd + 'T12:00:00Z'));\n\n// --- .ics (RFC 5545): horas en UTC, así el cambio de hora no afecta ---\nconst icsEsc = (s) => String(s ?? '').replace(/\\\\/g, '\\\\\\\\').replace(/;/g, '\\\\;').replace(/,/g, '\\\\,').replace(/\\r?\\n/g, '\\\\n');\nconst icsFold = (line) => {                       // líneas de máx. 75 octetos\n  let out = '', cur = '', bytes = 0, first = true;\n  for (const ch of line) {\n    const b = Buffer.byteLength(ch);\n    if (bytes + b > (first ? 75 : 74)) { out += cur + '\\r\\n '; cur = ''; bytes = 0; first = false; }\n    cur += ch; bytes += b;\n  }\n  return out + cur;\n};\nconst icsTime = (iso) => iso.replace(/[-:]/g, '').replace(/\\.\\d+/, '');   // 2026-11-09T09:00:00Z -> 20261109T090000Z\n// sequence: versión del evento (la lleva la base de datos: 0 reserva, +1 por cada cambio o cancelación).\n// Sin indicarla se usa la de la Fase 1: 0 (confirmado) / 1 (cancelado).\nfunction buildIcs({ uid, start, end, summary, description, url, cancelled, sequence }) {\n  const now = new Date().toISOString().slice(0, 19) + 'Z';\n  const lines = [\n    'BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//Turnos//n8n//ES', 'CALSCALE:GREGORIAN', 'METHOD:PUBLISH',\n    'BEGIN:VEVENT',\n    `UID:${uid}@turnos`,\n    `DTSTAMP:${icsTime(now)}`,\n    `DTSTART:${icsTime(start)}`,\n    `DTEND:${icsTime(end)}`,\n    `SUMMARY:${icsEsc(summary)}`,\n    `DESCRIPTION:${icsEsc(description)}`,\n    url ? `URL:${url}` : null,\n    `STATUS:${cancelled ? 'CANCELLED' : 'CONFIRMED'}`,\n    `SEQUENCE:${sequence ?? (cancelled ? 1 : 0)}`,\n    ...(cancelled ? [] : ['BEGIN:VALARM', 'TRIGGER:-PT1H', 'ACTION:DISPLAY', 'DESCRIPTION:Recordatorio de turno', 'END:VALARM']),\n    'END:VEVENT', 'END:VCALENDAR',\n  ].filter(Boolean);\n  return lines.map(icsFold).join('\\r\\n') + '\\r\\n';\n}\n\n// --- enlaces de gestión: <url del formulario>?codigo=<código secreto> ---\nconst enlaceCon = (base, code) => {\n  const b = String(base ?? '');\n  return b ? b + (b.includes('?') ? '&' : '?') + 'codigo=' + code : '';\n};\nconst dmy = (ymd) => String(ymd).split('-').reverse().join('/');          // 2026-11-09 -> 09/11/2026\n\n// --- avisos a quien atiende (inmediatos y resumen): misma plantilla sencilla ---\n// filas: [[etiqueta, valor], ...]  ->  { text, html }\nfunction plantillaAviso(titulo, filas) {\n  const text = [titulo, '', ...filas.map(([k, v]) => `${k}: ${v}`)].join('\\n');\n  const html = `<div style=\"font-family:Arial,Helvetica,sans-serif;max-width:560px;margin:auto;color:#1f2937\">\n<h2 style=\"margin:0 0 12px\">${esc(titulo)}</h2>\n<table style=\"border-collapse:collapse\">${filas.map(([k, v]) => `<tr><td style=\"padding:4px 14px 4px 0;color:#6b7280;vertical-align:top\">${esc(k)}</td><td><b>${esc(v)}</b></td></tr>`).join('')}</table></div>`;\n  return { text, html };\n}\n// Destinatario del aviso: staff_email (o, si está vacío, admin_email: lo resuelve get_config); nunca queda sin destino.\nconst destinoPersonal = (cfg, conf) => cfg.staff_email || cfg.admin_email || conf.from_email;\n\nconst r = $input.first().json;                       // respuesta de book_slot (ok: true)\nconst cfg = $('Cargar parámetros').first().json;     // get_config()\nconst conf = $('Configuración').first().json;\n\nconst enlace = enlaceCon(cfg.cancel_form_url, r.management_code);\nconst enlaceCambio = enlaceCon(cfg.reschedule_form_url, r.management_code);   // Fase 2: cambiar la hora\nconst fecha = fechaLarga(r.local_date);\nconst servicio = r.service_name;\n\nconst ics = buildIcs({\n  uid: r.booking_id,\n  start: r.starts_at,\n  end: r.ends_at,\n  summary: servicio,\n  description: `Turno reservado a nombre de ${r.customer_name}.\\nPara cancelarlo: ${enlace}` + (enlaceCambio ? `\\nPara cambiar la hora: ${enlaceCambio}` : ''),\n  url: enlace,\n  cancelled: false,\n});\nconst binary = { ics: await this.helpers.prepareBinaryData(Buffer.from(ics, 'utf8'), 'turno.ics', 'text/calendar') };\n\nconst text = [\n  `Hola ${r.customer_name},`, '',\n  `Tu turno está confirmado:`,\n  `  ${servicio}`,\n  `  ${fecha} a las ${r.local_time} (hora de ${r.timezone})`, '',\n  `Adjuntamos un archivo .ics para añadirlo a tu calendario.`, '',\n  `¿No puedes venir? Cancélalo aquí (con la antelación indicada):`,\n  enlace, '',\n  ...(enlaceCambio ? [`¿Prefieres otra hora? Cámbiala aquí:`, enlaceCambio, ''] : []),\n  `Guarda este enlace: contiene tu código secreto de gestión.`,\n].join('\\n');\n\nconst html = `<div style=\"font-family:Arial,Helvetica,sans-serif;max-width:560px;margin:auto;color:#1f2937\">\n<h2 style=\"margin:0 0 12px\">Turno confirmado ✅</h2>\n<p>Hola ${esc(r.customer_name)},</p>\n<p>Tu turno está confirmado:</p>\n<table style=\"border-collapse:collapse;margin:12px 0\"><tr><td style=\"padding:6px 12px 6px 0;color:#6b7280\">Servicio</td><td><b>${esc(servicio)}</b></td></tr>\n<tr><td style=\"padding:6px 12px 6px 0;color:#6b7280\">Día</td><td><b>${esc(fecha)}</b></td></tr>\n<tr><td style=\"padding:6px 12px 6px 0;color:#6b7280\">Hora</td><td><b>${esc(r.local_time)}</b> (hora de ${esc(r.timezone)})</td></tr></table>\n<p>Adjuntamos un archivo <b>.ics</b> para añadirlo a tu calendario.</p>\n<p>¿No puedes venir? <a href=\"${esc(enlace)}\">Cancela tu turno aquí</a>.${enlaceCambio ? ` ¿Prefieres otra hora? <a href=\"${esc(enlaceCambio)}\">Cámbiala aquí</a>.` : ''}</p>\n<p style=\"color:#6b7280;font-size:13px\">Guarda este correo: el enlace contiene tu código secreto de gestión.</p></div>`;\n\nreturn [{ json: {\n  booking_id: r.booking_id,\n  from: conf.from_email,\n  to: r.customer_email,\n  subject: `Turno confirmado: ${servicio} · ${r.local_date.split('-').reverse().join('/')} ${r.local_time}`,\n  text, html, enlace, fecha,\n  local_time: r.local_time, service_name: servicio, customer_name: r.customer_name,\n}, binary }];\n"
+      },
+      "id": "generar-correo",
+      "name": "Generar correo",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3520,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "fromEmail": "={{ $json.from }}",
+        "toEmail": "={{ $json.to }}",
+        "subject": "={{ $json.subject }}",
+        "emailFormat": "both",
+        "text": "={{ $json.text }}",
+        "html": "={{ $json.html }}",
+        "options": {
+          "appendAttribution": false,
+          "fileAttachments": "ics"
+        }
+      },
+      "id": "enviar-correo-de-confirmaci-n",
+      "name": "Enviar correo de confirmación",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        3740,
+        0
+      ],
+      "credentials": {
+        "smtp": {
+          "id": "smtpTurnos1",
+          "name": "SMTP turnos"
+        }
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Configuración').first().json.supabase_url }}/rest/v1/rpc/log_email",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ p_booking_id: $('Generar correo').last().json.booking_id, p_kind: 'confirmation', p_to: $('Generar correo').last().json.to, p_status: 'sent', p_error: null }) }}",
+        "options": {}
+      },
+      "id": "registrar-correo-enviado",
+      "name": "Registrar correo enviado",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        3960,
+        -100
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "supabaseTurnos1",
+          "name": "Supabase turnos (service role)"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Configuración').first().json.supabase_url }}/rest/v1/rpc/log_email",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ p_booking_id: $('Generar correo').last().json.booking_id, p_kind: 'confirmation', p_to: $('Generar correo').last().json.to, p_status: 'failed', p_error: String($json.error?.message ?? $json.error ?? 'error desconocido') }) }}",
+        "options": {}
+      },
+      "id": "registrar-fallo-del-correo",
+      "name": "Registrar fallo del correo",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        3960,
+        120
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "supabaseTurnos1",
+          "name": "Supabase turnos (service role)"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "fromEmail": "={{ $('Configuración').first().json.from_email }}",
+        "toEmail": "={{ $('Cargar parámetros').first().json.admin_email }}",
+        "subject": "=[Turnos] No se pudo enviar el correo de confirmación",
+        "emailFormat": "text",
+        "text": "=Se guardó la reserva {{ $('Generar correo').last().json.booking_id }} pero el correo de confirmación falló. Revisa la tabla email_log en Supabase (status = failed).",
+        "options": {
+          "appendAttribution": false
+        }
+      },
+      "id": "avisar-al-administrador",
+      "name": "Avisar al administrador",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        4180,
+        120
+      ],
+      "credentials": {
+        "smtp": {
+          "id": "smtpTurnos1",
+          "name": "SMTP turnos"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "// ---- utilidades compartidas (se copian dentro de los nodos Code que las usan) ----\nconst esc = (s) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\"/g, '&quot;');\n\n// Fecha larga en español a partir de 'YYYY-MM-DD' (ya es la fecha LOCAL: la calcula la base de datos).\nconst fechaLarga = (ymd) => new Intl.DateTimeFormat('es-ES', {\n  timeZone: 'UTC', weekday: 'long', day: 'numeric', month: 'long', year: 'numeric',\n}).format(new Date(ymd + 'T12:00:00Z'));\n\n// --- .ics (RFC 5545): horas en UTC, así el cambio de hora no afecta ---\nconst icsEsc = (s) => String(s ?? '').replace(/\\\\/g, '\\\\\\\\').replace(/;/g, '\\\\;').replace(/,/g, '\\\\,').replace(/\\r?\\n/g, '\\\\n');\nconst icsFold = (line) => {                       // líneas de máx. 75 octetos\n  let out = '', cur = '', bytes = 0, first = true;\n  for (const ch of line) {\n    const b = Buffer.byteLength(ch);\n    if (bytes + b > (first ? 75 : 74)) { out += cur + '\\r\\n '; cur = ''; bytes = 0; first = false; }\n    cur += ch; bytes += b;\n  }\n  return out + cur;\n};\nconst icsTime = (iso) => iso.replace(/[-:]/g, '').replace(/\\.\\d+/, '');   // 2026-11-09T09:00:00Z -> 20261109T090000Z\n// sequence: versión del evento (la lleva la base de datos: 0 reserva, +1 por cada cambio o cancelación).\n// Sin indicarla se usa la de la Fase 1: 0 (confirmado) / 1 (cancelado).\nfunction buildIcs({ uid, start, end, summary, description, url, cancelled, sequence }) {\n  const now = new Date().toISOString().slice(0, 19) + 'Z';\n  const lines = [\n    'BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//Turnos//n8n//ES', 'CALSCALE:GREGORIAN', 'METHOD:PUBLISH',\n    'BEGIN:VEVENT',\n    `UID:${uid}@turnos`,\n    `DTSTAMP:${icsTime(now)}`,\n    `DTSTART:${icsTime(start)}`,\n    `DTEND:${icsTime(end)}`,\n    `SUMMARY:${icsEsc(summary)}`,\n    `DESCRIPTION:${icsEsc(description)}`,\n    url ? `URL:${url}` : null,\n    `STATUS:${cancelled ? 'CANCELLED' : 'CONFIRMED'}`,\n    `SEQUENCE:${sequence ?? (cancelled ? 1 : 0)}`,\n    ...(cancelled ? [] : ['BEGIN:VALARM', 'TRIGGER:-PT1H', 'ACTION:DISPLAY', 'DESCRIPTION:Recordatorio de turno', 'END:VALARM']),\n    'END:VEVENT', 'END:VCALENDAR',\n  ].filter(Boolean);\n  return lines.map(icsFold).join('\\r\\n') + '\\r\\n';\n}\n\n// --- enlaces de gestión: <url del formulario>?codigo=<código secreto> ---\nconst enlaceCon = (base, code) => {\n  const b = String(base ?? '');\n  return b ? b + (b.includes('?') ? '&' : '?') + 'codigo=' + code : '';\n};\nconst dmy = (ymd) => String(ymd).split('-').reverse().join('/');          // 2026-11-09 -> 09/11/2026\n\n// --- avisos a quien atiende (inmediatos y resumen): misma plantilla sencilla ---\n// filas: [[etiqueta, valor], ...]  ->  { text, html }\nfunction plantillaAviso(titulo, filas) {\n  const text = [titulo, '', ...filas.map(([k, v]) => `${k}: ${v}`)].join('\\n');\n  const html = `<div style=\"font-family:Arial,Helvetica,sans-serif;max-width:560px;margin:auto;color:#1f2937\">\n<h2 style=\"margin:0 0 12px\">${esc(titulo)}</h2>\n<table style=\"border-collapse:collapse\">${filas.map(([k, v]) => `<tr><td style=\"padding:4px 14px 4px 0;color:#6b7280;vertical-align:top\">${esc(k)}</td><td><b>${esc(v)}</b></td></tr>`).join('')}</table></div>`;\n  return { text, html };\n}\n// Destinatario del aviso: staff_email (o, si está vacío, admin_email: lo resuelve get_config); nunca queda sin destino.\nconst destinoPersonal = (cfg, conf) => cfg.staff_email || cfg.admin_email || conf.from_email;\n\n// Fase 2 · aviso inmediato a quien atiende: NUEVA RESERVA.\n// Va después del correo a la persona (su confirmación sale primero) y es tolerante a fallos:\n// si este correo no sale, queda en email_log y la persona ve igualmente su confirmación.\nconst r = $('Reservar turno').last().json;               // respuesta de book_slot (ok: true)\nconst cfg = $('Cargar parámetros').first().json;         // get_config()\nconst conf = $('Configuración').first().json;\nconst telefono = $('Preparar reserva').last().json.body.p_phone;\n\nconst { text, html } = plantillaAviso('Nueva reserva', [\n  ['Servicio', r.service_name],\n  ['Día', fechaLarga(r.local_date)],\n  ['Hora', `${r.local_time} (hora de ${r.timezone})`],\n  ['Nombre', r.customer_name],\n  ['Teléfono', telefono],\n  ['Correo', r.customer_email],\n]);\n\nreturn [{ json: {\n  booking_id: r.booking_id,\n  from: conf.from_email,\n  to: destinoPersonal(cfg, conf),\n  subject: `[Turnos] Nueva reserva: ${r.service_name} · ${dmy(r.local_date)} ${r.local_time} · ${r.customer_name}`,\n  text, html,\n} }];\n"
+      },
+      "id": "generar-aviso-al-personal",
+      "name": "Generar aviso al personal",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        4400,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "fromEmail": "={{ $json.from }}",
+        "toEmail": "={{ $json.to }}",
+        "subject": "={{ $json.subject }}",
+        "emailFormat": "both",
+        "text": "={{ $json.text }}",
+        "html": "={{ $json.html }}",
+        "options": {
+          "appendAttribution": false
+        }
+      },
+      "id": "enviar-aviso-al-personal",
+      "name": "Enviar aviso al personal",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        4620,
+        0
+      ],
+      "credentials": {
+        "smtp": {
+          "id": "smtpTurnos1",
+          "name": "SMTP turnos"
+        }
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Configuración').first().json.supabase_url }}/rest/v1/rpc/log_email",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ p_booking_id: $('Generar aviso al personal').last().json.booking_id, p_kind: 'staff_booking', p_to: $('Generar aviso al personal').last().json.to, p_status: 'sent', p_error: null }) }}",
+        "options": {}
+      },
+      "id": "registrar-aviso-enviado",
+      "name": "Registrar aviso enviado",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        4840,
+        -100
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "supabaseTurnos1",
+          "name": "Supabase turnos (service role)"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Configuración').first().json.supabase_url }}/rest/v1/rpc/log_email",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ p_booking_id: $('Generar aviso al personal').last().json.booking_id, p_kind: 'staff_booking', p_to: $('Generar aviso al personal').last().json.to, p_status: 'failed', p_error: String($json.error?.message ?? $json.error ?? 'error desconocido') }) }}",
+        "options": {}
+      },
+      "id": "registrar-fallo-del-aviso",
+      "name": "Registrar fallo del aviso",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        4840,
+        100
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "supabaseTurnos1",
+          "name": "Supabase turnos (service role)"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Texto de la página final \"Turno reservado\". La reserva ya está guardada pase lo que pase con el correo.\nconst c = $('Generar correo').last().json;\nlet correoFallido = false;\ntry { correoFallido = $('Registrar fallo del correo').isExecuted; } catch (e) { /* no ejecutado */ }\n\nconst detalle = `${c.service_name} · ${c.fecha} a las ${c.local_time}`;\nconst mensaje = correoFallido\n  ? `${detalle}.\\nNo hemos podido enviarte el correo de confirmación, pero tu turno está reservado. `\n    + `Guarda este enlace para poder cancelarlo: ${c.enlace}`\n  : `${detalle}.\\nTe hemos enviado la confirmación a ${c.to} con un archivo .ics para tu calendario. `\n    + `En ese correo tienes el enlace para cancelar el turno.`;\n\nreturn [{ json: { mensaje } }];\n"
+      },
+      "id": "mensaje-final",
+      "name": "Mensaje final",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        5300,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "completion",
+        "respondWith": "text",
+        "completionTitle": "Turno reservado",
+        "completionMessage": "={{ $json.mensaje }}",
+        "limitWaitTime": true,
+        "limitType": "afterTimeInterval",
+        "resumeAmount": 5,
+        "resumeUnit": "minutes",
+        "options": {}
+      },
+      "id": "turno-reservado",
+      "name": "Turno reservado",
+      "type": "n8n-nodes-base.form",
+      "typeVersion": 2.5,
+      "position": [
+        5520,
+        0
+      ],
+      "webhookId": "00000000-0000-4000-8000-000000000006"
+    },
+    {
+      "parameters": {
+        "operation": "completion",
+        "respondWith": "text",
+        "completionTitle": "Ya tienes un turno reservado",
+        "completionMessage": "Con este correo ya tienes un turno pendiente para este servicio. Si necesitas otro horario, cancela el actual con el enlace del correo de confirmación y vuelve a reservar.",
+        "limitWaitTime": true,
+        "limitType": "afterTimeInterval",
+        "resumeAmount": 5,
+        "resumeUnit": "minutes",
+        "options": {}
+      },
+      "id": "fin-ya-tienes-turno",
+      "name": "Fin · Ya tienes turno",
+      "type": "n8n-nodes-base.form",
+      "typeVersion": 2.5,
+      "position": [
+        3520,
+        640
+      ],
+      "webhookId": "00000000-0000-4000-8000-000000000007"
+    },
+    {
+      "parameters": {
+        "operation": "completion",
+        "respondWith": "text",
+        "completionTitle": "No hemos podido reservar",
+        "completionMessage": "Ha ocurrido un problema inesperado. Inténtalo de nuevo en unos minutos.",
+        "limitWaitTime": true,
+        "limitType": "afterTimeInterval",
+        "resumeAmount": 5,
+        "resumeUnit": "minutes",
+        "options": {}
+      },
+      "id": "fin-error",
+      "name": "Fin · Error",
+      "type": "n8n-nodes-base.form",
+      "typeVersion": 2.5,
+      "position": [
+        3520,
+        800
+      ],
+      "webhookId": "00000000-0000-4000-8000-000000000008"
+    }
+  ],
+  "connections": {
+    "Formulario de reserva": {
+      "main": [
+        [
+          {
+            "node": "Configuración",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Configuración": {
+      "main": [
+        [
+          {
+            "node": "Cargar parámetros",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Cargar parámetros": {
+      "main": [
+        [
+          {
+            "node": "Cargar servicios",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Cargar servicios": {
+      "main": [
+        [
+          {
+            "node": "Preparar página 1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Preparar página 1": {
+      "main": [
+        [
+          {
+            "node": "Página 1 · Datos",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Página 1 · Datos": {
+      "main": [
+        [
+          {
+            "node": "Validar datos",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validar datos": {
+      "main": [
+        [
+          {
+            "node": "¿Datos válidos?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Datos válidos?": {
+      "main": [
+        [
+          {
+            "node": "Preparar consulta",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Reintento datos",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Reintento datos": {
+      "main": [
+        [
+          {
+            "node": "Cargar servicios",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Preparar consulta": {
+      "main": [
+        [
+          {
+            "node": "Consultar disponibilidad",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Consultar disponibilidad": {
+      "main": [
+        [
+          {
+            "node": "Preparar página de horas",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Preparar página de horas": {
+      "main": [
+        [
+          {
+            "node": "¿Hay horas libres?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Hay horas libres?": {
+      "main": [
+        [
+          {
+            "node": "Página 2 · Hora",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "¿Hay otros días?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Hay otros días?": {
+      "main": [
+        [
+          {
+            "node": "Preparar página de días",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Fin · Sin disponibilidad",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Preparar página de días": {
+      "main": [
+        [
+          {
+            "node": "Página · Día completo",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Página · Día completo": {
+      "main": [
+        [
+          {
+            "node": "Elegir otro día",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Elegir otro día": {
+      "main": [
+        [
+          {
+            "node": "Preparar consulta",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Página 2 · Hora": {
+      "main": [
+        [
+          {
+            "node": "Preparar reserva",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Preparar reserva": {
+      "main": [
+        [
+          {
+            "node": "Reservar turno",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Reservar turno": {
+      "main": [
+        [
+          {
+            "node": "Resultado de la reserva",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Resultado de la reserva": {
+      "main": [
+        [
+          {
+            "node": "Generar correo",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Turno ocupado",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Fin · Ya tienes turno",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Reintento datos",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Fin · Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Turno ocupado": {
+      "main": [
+        [
+          {
+            "node": "Preparar consulta",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generar correo": {
+      "main": [
+        [
+          {
+            "node": "Enviar correo de confirmación",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Enviar correo de confirmación": {
+      "main": [
+        [
+          {
+            "node": "Registrar correo enviado",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Registrar fallo del correo",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Registrar correo enviado": {
+      "main": [
+        [
+          {
+            "node": "Generar aviso al personal",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Registrar fallo del correo": {
+      "main": [
+        [
+          {
+            "node": "Avisar al administrador",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Avisar al administrador": {
+      "main": [
+        [
+          {
+            "node": "Generar aviso al personal",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generar aviso al personal": {
+      "main": [
+        [
+          {
+            "node": "Enviar aviso al personal",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Enviar aviso al personal": {
+      "main": [
+        [
+          {
+            "node": "Registrar aviso enviado",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Registrar fallo del aviso",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Registrar aviso enviado": {
+      "main": [
+        [
+          {
+            "node": "Mensaje final",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Registrar fallo del aviso": {
+      "main": [
+        [
+          {
+            "node": "Mensaje final",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mensaje final": {
+      "main": [
+        [
+          {
+            "node": "Turno reservado",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "errorWorkflow": "turnosErrores1",
+    "timezone": "Europe/Madrid",
+    "saveDataSuccessExecution": "all",
+    "saveDataErrorExecution": "all",
+    "saveManualExecutions": false
+  },
+  "pinData": {},
+  "meta": {
+    "templateCredsSetupCompleted": false
+  }
+}
